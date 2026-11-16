@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Anotador de Xadrez</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<style>
+:root{--bg:#fff;--fg:#111;--card:#f0f0f4;--ac:#0a7d3b;--bad:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111;--fg:#eee;--card:#222;--ac:#3ecf75;--bad:#ff6b5b}}
+:root[data-theme="dark"]{--bg:#111;--fg:#eee;--card:#222;--ac:#3ecf75;--bad:#ff6b5b}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px -apple-system,system-ui,sans-serif}
+body{padding:12px;max-width:520px;margin:auto}
+h1{font-size:20px;margin:4px 0 10px}
+.s{display:none}.s.on{display:block}
+input,select,button{font:inherit;padding:10px;border-radius:10px;border:1px solid #8886;background:var(--card);color:var(--fg);width:100%;box-sizing:border-box;margin:3px 0}
+button{background:var(--ac);color:#fff;border:0;font-weight:600}
+button.g{background:var(--card);color:var(--fg);border:1px solid #8886}
+.r{display:flex;gap:8px}.r>*{flex:1}
+canvas,img{max-width:100%;touch-action:none}
+#msg{padding:10px;border-radius:10px;background:var(--card);margin:6px 0;min-height:22px}
+#msg.bad{color:var(--bad);font-weight:600}
+#list{background:var(--card);border-radius:10px;padding:8px;line-height:1.7;max-height:200px;overflow:auto}
+small{opacity:.6;margin:0 8px 0 3px}
+#v{position:fixed;width:2px;height:2px;opacity:0;pointer-events:none}
+</style></head><body>
+<video id="v" playsinline muted autoplay></video>
+
+<div id="s0" class="s on">
+<h1>♟️ Anotador de Xadrez</h1>
+<div class="r"><input id="w" placeholder="Brancas: nome"><input id="wc" placeholder="Cidade"></div>
+<div class="r"><input id="b" placeholder="Pretas: nome"><input id="bc" placeholder="Cidade"></div>
+<button id="go">Iniciar e ligar a câmera</button>
+<p style="opacity:.7;font-size:14px">Use um tripé/suporte fixo acima do tabuleiro, com boa luz e todas as peças na posição inicial. Depois de calibrar, os lances são reconhecidos sozinhos assim que a mão sai do tabuleiro.</p>
+</div>
+
+<div id="s1" class="s">
+<h1>Calibração</h1>
+<div id="cm">Toque nos cantos, nesta ordem: <b>a1</b></div>
+<canvas id="cc"></canvas>
+<div class="r"><button class="g" id="cre">Refazer</button><button class="g" id="ccap">Nova imagem</button></div>
+<button id="cok" disabled>Confirmar calibração</button>
+<button class="g" id="csv" style="display:none">Usar calibração salva</button>
+</div>
+
+<div id="s2" class="s">
+<div id="msg">Iniciando…</div>
+<div class="r" style="align-items:center"><div id="turn"></div><div id="clk" style="text-align:right;font-variant-numeric:tabular-nums"></div></div>
+<canvas id="pv" width="256" height="256" style="width:100%;max-width:300px;display:block;margin:6px auto;border-radius:8px"></canvas>
+<div id="list"></div>
+<button id="photo" class="g" style="display:none">📷 Foto do lance</button>
+<div class="r"><button class="g" id="undo">Desfazer</button><button class="g" id="fix">Corrigir</button></div>
+<div class="r"><button class="g" id="rec">Recalibrar</button><button id="fin">Finalizar</button></div>
+</div>
+
+<div id="s3" class="s">
+<h1>Súmula</h1>
+<select id="res"><option>1-0</option><option>0-1</option><option>1/2-1/2</option><option>*</option></select>
+<img id="png" alt="Súmula">
+<p style="font-size:14px;opacity:.7">Para salvar em Fotos: segure a imagem e toque em Salvar.</p>
+<button id="shr">Compartilhar PNG</button>
+<button class="g" id="cpg">Copiar PGN</button>
+<button class="g" id="bk">Voltar à partida</button>
+</div>
+
+<script>
+const $=id=>document.getElementById(id),N=256,S=32,M=6,T=14;
+const ls=k=>{try{return localStorage.getItem(k)}catch(e){return null}},ss=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const FC=document.createElement('canvas'),FX=FC.getContext('2d',{willReadFrequently:true}),vid=$('v');
+let game=new Chess(),ref=null,prevG=null,stable=0,lastEval=null,LUT=null,pts=[],hist=[],tMove=0,photoMode=false,curG=null,timer=null;
+const nm=i=>'abcdefgh'[i>>3]+((i&7)+1),ix=n=>'abcdefgh'.indexOf(n[0])*8+(+n[1]-1);
+const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+const show=n=>{for(let i=0;i<4;i++)$('s'+i).classList.toggle('on',i==n)};
+const say=(t,bad)=>{$('msg').textContent=t;$('msg').className=bad?'bad':''};
+
+/* ---------- câmera ---------- */
+async function startCam(){
+  const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+  vid.srcObject=st;await vid.play();
+  try{await navigator.wakeLock.request('screen')}catch(e){}
+}
+function grab(){const w=vid.videoWidth,h=vid.videoHeight;if(!w)return false;const k=Math.min(1,800/w);FC.width=Math.round(w*k);FC.height=Math.round(h*k);FX.drawImage(vid,0,0,FC.width,FC.height);return true}
+function pickPhoto(cb){const i=document.createElement('input');i.type='file';i.accept='image/*';i.capture='environment';
+  i.onchange=()=>{const f=i.files[0];if(!f)return;const im=new Image();im.onload=()=>{const k=Math.min(1,800/im.width);FC.width=Math.round(im.width*k);FC.height=Math.round(im.height*k);FX.drawImage(im,0,0,FC.width,FC.height);cb()};im.src=URL.createObjectURL(f)};i.click()}
+
+/* ---------- homografia e retificação ---------- */
+function homog(d,s){const A=[],b=[];for(let i=0;i<4;i++){const[x,y]=d[i],[u,v]=s[i];A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}
+  const n=8;for(let i=0;i<n;i++){let p=i;for(let r=i+1;r<n;r++)if(Math.abs(A[r][i])>Math.abs(A[p][i]))p=r;[A[i],A[p]]=[A[p],A[i]];[b[i],b[p]]=[b[p],b[i]];
+    for(let r=i+1;r<n;r++){const f=A[r][i]/A[i][i];for(let c=i;c<n;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
+  const h=Array(n);for(let i=n-1;i>=0;i--){let t=b[i];for(let c=i+1;c<n;c++)t-=A[i][c]*h[c];h[i]=t/A[i][i]}return h}
+function buildLUT(){const h=homog([[0,N],[0,0],[N,0],[N,N]],pts),W=FC.width,Hh=FC.height;LUT=new Int32Array(N*N);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const d=h[6]*x+h[7]*y+1,u=Math.min(W-1,Math.max(0,Math.round((h[0]*x+h[1]*y+h[2])/d))),v=Math.min(Hh-1,Math.max(0,Math.round((h[3]*x+h[4]*y+h[5])/d)));LUT[y*N+x]=(v*W+u)*4}}
+function warp(){const d=FX.getImageData(0,0,FC.width,FC.height).data,g=new Float32Array(N*N);
+  for(let i=0;i<N*N;i++){const j=LUT[i];g[i]=.299*d[j]+.587*d[j+1]+.114*d[j+2]}return g}
+
+/* ---------- diferença por casa e interpretação ---------- */
+function sc(a,b){const r=[],w=S-2*M;for(let f=0;f<8;f++)for(let k=0;k<8;k++){const x0=f*S+M,y0=(7-k)*S+M;let t=0;
+  for(let y=0;y<w;y++){const o=(y0+y)*N+x0;for(let x=0;x<w;x++)t+=Math.abs(a[o+x]-b[o+x])}r[f*8+k]=t/(w*w)}
+  const m=[...r].sort((x,y)=>x-y)[32];return r.map(v=>Math.max(0,v-m))}
+function touched(m){const e=new Set([ix(m.from),ix(m.to)]),r=m.from[1];
+  if(m.flags.includes('e'))e.add(ix(m.to[0]+r));
+  if(m.flags.includes('k')){e.add(ix('h'+r));e.add(ix('f'+r))}
+  if(m.flags.includes('q')){e.add(ix('a'+r));e.add(ix('d'+r))}return e}
+function diag(obs){const n=obs.map(nm).join(','),own=obs.filter(i=>{const p=game.get(nm(i));return p&&p.color==game.turn()});
+  if(obs.length==1)return`Só ${n} mudou: peça levantada ou mal assentada.`;
+  if(!own.length)return`Mudou ${n}: nenhuma peça de quem joga. Peça do adversário mexida?`;
+  if(own.length>1)return`Mudou ${n}: outra peça foi movimentada. Reponha e aguarde.`;
+  const src=nm(own[0]),d=game.moves({verbose:true}).filter(m=>m.from==src).map(m=>ix(m.to));
+  if(!d.length)return`A peça em ${src} não tem lance legal.`;
+  if(!obs.some(i=>i!=own[0]&&d.includes(i)))return`Peça de ${src} foi para casa inválida (${n}).`;
+  return`Destino possível, mas outras casas mudaram (${n}). Ajuste e aguarde.`}
+function interp(sco){const c=sco.map(v=>Math.min(v/T,2)),obs=c.map((v,i)=>v>=1?i:-1).filter(i=>i>=0);
+  if(!obs.length)return{k:'none'};
+  const r=game.moves({verbose:true}).filter(m=>!m.promotion||m.promotion=='q').map(m=>{const e=touched(m);let co=0;c.forEach((v,i)=>{co+=e.has(i)?Math.max(0,1-v):Math.max(0,v-.5)});return{m,co}}).sort((a,b)=>a.co-b.co);
+  if(r.length&&r[0].co<=.9&&(r.length==1||r[1].co-r[0].co>.3))return{k:'ok',m:r[0].m};
+  return{k:'bad',msg:diag(obs)}}
+
+function evaluate(g){
+  if(lastEval&&Math.max(...sc(lastEval,g))<7)return;
+  const r=interp(sc(ref,g));
+  if(r.k=='none'){lastEval=null;say('Sem mudança. Aguardando lance…');return}
+  lastEval=g;
+  if(r.k=='ok'){const t=Date.now();game.move({from:r.m.from,to:r.m.to,promotion:'q'});hist.push({san:r.m.san,dt:(t-tMove)/1000,m:r.m});tMove=t;ref=g;lastEval=null;
+    navigator.vibrate&&navigator.vibrate(60);say(`${hist.length&1?(hist.length+1>>1)+'.':(hist.length>>1)+'…'} ${r.m.san}`+(game.game_over()?' — fim de jogo':''));render()}
+  else say(r.msg,true)}
+
+/* ---------- loop automático ---------- */
+function tick(){if(photoMode||!LUT||!$('s2').classList.contains('on')||!grab())return;
+  const g=warp(),mv=prevG?Math.max(...sc(g,prevG)):99;prevG=g;draw(g);
+  if(tMove&&!game.game_over())$('clk').textContent='⏱ '+fmt((Date.now()-tMove)/1000);
+  if(mv>7){stable=0;return}
+  if(++stable==4){if(!ref){ref=g;tMove=Date.now();say('Posição inicial capturada. Pode jogar!')}else evaluate(g)}}
+function draw(g){curG=g;const c=$('pv'),x=c.getContext('2d'),im=x.createImageData(N,N);
+  for(let i=0;i<N*N;i++){const v=g[i];im.data[i*4]=im.data[i*4+1]=im.data[i*4+2]=v;im.data[i*4+3]=255}
+  x.putImageData(im,0,0);const l=hist.length&&hist[hist.length-1].m;
+  if(l){[[l.from,'#f33'],[l.to,'#3c3']].forEach(([s,col])=>{x.strokeStyle=col;x.lineWidth=3;x.strokeRect((s.charCodeAt(0)-97)*S+2,(8-s[1])*S+2,S-4,S-4)})}}
+function render(){let h='';hist.forEach((e,i)=>{h+=(i%2?'':`<b>${i/2+1}.</b> `)+e.san+`<small>${fmt(e.dt)}</small>`});
+  $('list').innerHTML=h||'—';$('list').scrollTop=1e5;$('turn').textContent=game.turn()=='w'?'Vez: brancas ⚪':'Vez: pretas ⚫'}
+
+/* ---------- calibração ---------- */
+const NM=['a1','a8','h8','h1'];
+function drawCal(){const c=$('cc'),x=c.getContext('2d');c.width=FC.width;c.height=FC.height;x.drawImage(FC,0,0);
+  x.lineWidth=3;x.strokeStyle='#0f0';x.fillStyle='#f00';x.font='bold 28px sans-serif';
+  pts.forEach((p,i)=>{x.beginPath();x.arc(p[0],p[1],8,0,7);x.fill();x.fillText(NM[i],p[0]+10,p[1]-10)});
+  if(pts.length>1){x.beginPath();pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));if(pts.length==4)x.closePath();x.stroke()}
+  $('cm').innerHTML=pts.length<4?`Toque nos cantos, nesta ordem: <b>${NM[pts.length]}</b>`:'Confira o contorno e confirme.';$('cok').disabled=pts.length<4}
+let cal=null;function capCal(){clearInterval(cal);cal=setInterval(()=>{if(grab())drawCal()},100)}
+$('cc').addEventListener('pointerdown',e=>{if(pts.length>=4)return;const r=e.target.getBoundingClientRect();pts.push([(e.clientX-r.left)*FC.width/r.width,(e.clientY-r.top)*FC.height/r.height]);drawCal()});
+$('cre').onclick=()=>{pts=[];drawCal()};$('ccap').onclick=()=>{pts=[];capCal()};
+function startPlay(){clearInterval(cal);buildLUT();ss('corners',JSON.stringify(pts.map(p=>[p[0]/FC.width,p[1]/FC.height])));ref=null;prevG=null;stable=0;lastEval=null;show(2);
+  say(photoMode?'Tire a foto da posição inicial.':'Mantenha as mãos fora do tabuleiro…');render();$('photo').style.display=photoMode?'block':'none';
+  clearInterval(timer);timer=setInterval(tick,200)}
+$('cok').onclick=startPlay;
+$('csv').onclick=()=>{const c=JSON.parse(ls('corners'));pts=c.map(p=>[p[0]*FC.width,p[1]*FC.height]);startPlay()};
+
+/* ---------- fluxo ---------- */
+['w','wc','b','bc'].forEach(k=>{const v=ls('n_'+k);if(v)$(k).value=v});
+$('go').onclick=async()=>{['w','wc','b','bc'].forEach(k=>ss('n_'+k,$(k).value));
+  game=new Chess();hist=[];pts=[];show(1);
+  try{await startCam();await new Promise(r=>setTimeout(r,700));capCal()}
+  catch(e){$('cm').innerHTML='<b style="color:var(--bad)">Câmera bloqueada ('+e.name+').</b> Abra esta página direto no Safari e permita a câmera (aA → Ajustes do Site → Câmera).'}
+  $('csv').style.display=ls('corners')?'block':'none'};
+$('rec').onclick=()=>{clearInterval(timer);pts=[];show(1);capCal()};
+$('photo').onclick=()=>pickPhoto(()=>{const g=warp();draw(g);if(!ref){ref=g;tMove=Date.now();say('Posição inicial capturada.')}else evaluate(g)});
+$('undo').onclick=()=>{if(!hist.length)return;game.undo();hist.pop();ref=null;stable=0;lastEval=null;say('Lance desfeito. Reponha as peças e aguarde.');render()};
+$('fix').onclick=()=>{const s=prompt('Lance correto (ex.: Nf3, exd5, O-O, e8=Q):');if(!s)return;
+  const m=game.move(s,{sloppy:true});if(!m){say('Lance inválido: '+s,true);return}
+  const t=Date.now();hist.push({san:m.san,dt:(t-tMove)/1000,m});tMove=t;ref=null;stable=0;lastEval=null;say('Registrado: '+m.san);render()};
+
+/* ---------- súmula PNG ---------- */
+function sheet(){const W=1080,rows=Math.ceil(hist.length/8),H=700+rows*40,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);x.fillStyle='#000';x.font='bold 36px sans-serif';
+  x.fillText(`Brancas: ${$('w').value} (${$('wc').value})`,40,60);x.fillText(`Pretas: ${$('b').value} (${$('bc').value})`,40,110);
+  x.font='28px sans-serif';x.fillText(`Data: ${new Date().toLocaleDateString('pt-BR')}    Resultado: ${$('res').value}`,40,160);
+  const bd=game.board(),X=340,Y=190,q=50;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){x.fillStyle=(r+f)%2?'#b58863':'#f0d9b5';x.fillRect(X+f*q,Y+r*q,q,q);const p=bd[r][f];
+    if(p){const ch={k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'}[p.type]+'\uFE0E';x.font='40px sans-serif';x.textAlign='center';x.lineWidth=2;x.strokeStyle='#000';x.fillStyle=p.color=='w'?'#fff':'#000';
+      x.strokeText(ch,X+f*q+q/2,Y+r*q+38);x.fillText(ch,X+f*q+q/2,Y+r*q+38)}}
+  x.textAlign='left';x.fillStyle='#000';x.font='26px sans-serif';x.fillText('Posição final',X,Y+q*8+34);
+  x.font='24px sans-serif';
+  for(let i=0;i<hist.length;i+=2){const p=i/2,col=p%4,row=Math.floor(p/4);
+    x.fillText(`${p+1}. ${hist[i].san}  ${hist[i+1]?hist[i+1].san:''}`,40+col*260,650+row*40)}
+  return c}
+let cv=null;
+function mkSheet(){cv=sheet();$('png').src=cv.toDataURL('image/png')}
+$('fin').onclick=()=>{const o=game.in_checkmate()?(game.turn()=='w'?'0-1':'1-0'):game.in_draw()?'1/2-1/2':'*';$('res').value=o;mkSheet();show(3)};
+$('res').onchange=mkSheet;$('bk').onclick=()=>show(2);
+$('cpg').onclick=()=>{game.header('White',$('w').value,'Black',$('b').value,'Site',$('wc').value,'Result',$('res').value);
+  try{navigator.clipboard.writeText(game.pgn());alert('PGN copiado')}catch(e){prompt('PGN:',game.pgn())}};
+$('shr').onclick=()=>cv.toBlob(async b=>{const f=new File([b],'partida.png',{type:'image/png'});
+  try{await navigator.share({files:[f]})}catch(e){alert('Segure a imagem e toque em Salvar.')}});
+</script></body></html>
