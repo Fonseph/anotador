@@ -1,4 +1,3 @@
-# anotador
 # ♟️ Anotador de Xadrez
 
 Aplicativo web que usa a câmera do celular para **reconhecer e anotar automaticamente os lances** de uma partida de xadrez em tabuleiro físico. Roda inteiro no navegador (testado como alvo: Safari no iPhone), sem instalar nada e sem enviar imagens para servidor.
@@ -13,8 +12,6 @@ Aplicativo web que usa a câmera do celular para **reconhecer e anotar automatic
 4. **Validação:** a mudança só vira lance se corresponder a um **lance legal** para quem joga (inclui roque e en passant, usando a biblioteca chess.js).
 5. **Confirmação:** o mesmo lance precisa ser detectado de forma **consistente por cerca de 1 segundo**. A mão passando sobre o tabuleiro não gera lance.
 6. **Lance inválido:** o app mostra o motivo (peça levantada, casa inválida, outra peça movimentada, peça devolvida) e espera a correção.
-
-A ideia de base (calibração por 4 pontos, diferença entre a imagem antes e depois e validação pelas regras do xadrez) é inspirada em [Vatsalparsaniya/Realtime-OpenCV-Chess](https://github.com/Vatsalparsaniya/Realtime-OpenCV-Chess). Aqui o processamento de imagem é feito com canvas e JavaScript, não com a biblioteca OpenCV.
 
 ## Como usar
 
