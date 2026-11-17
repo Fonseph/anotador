@@ -20,6 +20,7 @@ canvas,img{max-width:100%;touch-action:none}
 #msg.bad{color:var(--bad);font-weight:600}
 #list{background:var(--card);border-radius:10px;padding:8px;line-height:1.7;max-height:200px;overflow:auto}
 small{opacity:.6;margin:0 8px 0 3px}
+.lk{display:block;text-align:center;padding:10px;border-radius:10px;border:1px solid #8886;background:var(--card);color:var(--fg);margin:3px 0;text-decoration:none}
 #v{position:fixed;width:2px;height:2px;opacity:0;pointer-events:none}
 </style></head><body>
 <video id="v" playsinline muted autoplay></video>
@@ -57,7 +58,7 @@ small{opacity:.6;margin:0 8px 0 3px}
 <textarea id="mv" readonly rows="4" style="width:100%;box-sizing:border-box;font:16px monospace;padding:8px;border-radius:10px"></textarea><button id="cpl">Copiar lances</button><img id="png" alt="Súmula">
 <p style="font-size:14px;opacity:.7">Para salvar em Fotos: segure a imagem e toque em Salvar.</p>
 <button id="shr">Compartilhar PNG</button>
-<button class="g" id="cpg">Copiar PGN</button>
+<button class="g" id="cpg">Copiar PGN</button><button class="g" id="dlp">Baixar arquivo .pgn</button><a id="lic" class="lk" href="https://lichess.org/paste" target="_blank" rel="noopener">Copiar PGN e abrir Lichess</a><a id="chc" class="lk" href="https://www.chess.com/analysis" target="_blank" rel="noopener">Copiar PGN e abrir Chess.com</a>
 <button class="g" id="bk">Voltar à partida</button>
 </div>
 
@@ -203,4 +204,14 @@ $('cpg').onclick=()=>{game.header('White',$('w').value,'Black',$('b').value,'Sit
   try{navigator.clipboard.writeText(game.pgn());alert('PGN copiado')}catch(e){prompt('PGN:',game.pgn())}};
 $('shr').onclick=()=>cv.toBlob(async b=>{const f=new File([b],'partida.png',{type:'image/png'});
   try{await navigator.share({files:[f]})}catch(e){alert('Segure a imagem e toque em Salvar.')}});
+function pgn(){const q=s=>((s||'').trim().replace(/[\\"]/g,'')||'?'),d=new Date(),dt=d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0'),wc=$('wc').value.trim(),bc=$('bc').value.trim(),site=wc&&bc&&wc!=bc?wc+' / '+bc:(wc||bc||'?');
+  let h=`[Event "Partida casual"]\n[Site "${q(site)}"]\n[Date "${dt}"]\n[Round "-"]\n[White "${q($('w').value)}"]\n[Black "${q($('b').value)}"]\n[Result "${$('res').value}"]\n`;
+  if(wc)h+=`[WhiteCity "${q(wc)}"]\n`;if(bc)h+=`[BlackCity "${q(bc)}"]\n`;
+  let out='',row='';line().split(' ').forEach(t=>{if((row+' '+t).trim().length>80){out+=row+'\n';row=t}else row=(row+' '+t).trim()});return h+'\n'+out+row+'\n'}
+const copy=async t=>{try{await navigator.clipboard.writeText(t);return true}catch(e){return false}};
+$('cpg').onclick=async()=>{const p=pgn();(await copy(p))?alert('PGN copiado'):prompt('PGN:',p)};
+$('dlp').onclick=async()=>{const p=pgn(),f=new File([p],'partida.pgn',{type:'application/x-chess-pgn'});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}catch(e){if(e.name=='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download='partida.pgn';document.body.appendChild(a);a.click();a.remove()};
+['lic','chc'].forEach(i=>$(i).addEventListener('click',()=>{copy(pgn())}));
 </script></body></html>
