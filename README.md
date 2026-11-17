@@ -39,7 +39,7 @@ Ao finalizar, o app gera:
 - **Lances em uma linha**, pronta para copiar:
   `1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0`
 - **Súmula em PNG** com jogadores, cidades, data, resultado, lances e a posição final (segure a imagem para salvar em Fotos, ou use Compartilhar).
-- **PGN** com cabeçalho, copiado para a área de transferência.
+- **PGN padrão**, compatível com Lichess e Chess.com, com os campos `Event`, `Site`, `Date`, `Round`, `White`, `Black` e `Result`, mais as cidades dos jogadores (`WhiteCity` e `BlackCity`). Pode ser copiado, baixado como `partida.pgn` ou compartilhado. Os botões **Copiar PGN e abrir Lichess** e **Copiar PGN e abrir Chess.com** copiam o PGN e abrem o site para você colar.
 
 O resultado (`1-0`, `0-1`, `1/2-1/2`, `*`) é sugerido automaticamente quando a partida termina em mate ou empate e pode ser alterado.
 
